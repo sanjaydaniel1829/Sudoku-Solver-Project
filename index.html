@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku Solver</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            color: #333;
+        }
+        .sudoku-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 50px);
+            gap: 2px;
+            background-color: #000;
+            padding: 2px;
+            border: 2px solid #333;
+        }
+        .cell {
+            width: 50px;
+            height: 50px;
+            background-color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+        .cell input {
+            width: 100%;
+            height: 100%;
+            border: none;
+            text-align: center;
+            font-size: 20px;
+            outline: none;
+        }
+        .cell.filled {
+            background-color: #e0e0e0;
+        }
+        .cell.solving {
+            animation: solving 0.2s ease-in-out;
+        }
+        @keyframes solving {
+            0% { background-color: #fff; }
+            50% { background-color: #a3e4d7; }
+            100% { background-color: #fff; }
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #error-message {
+            color: red;
+            margin-top: 10px;
+            max-width: 600px;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sudoku Solver</h1>
+    <div class="sudoku-grid" id="sudoku-grid">
+        <!-- Grid will be populated by JavaScript -->
+    </div>
+    <div class="controls">
+        <button onclick="loadSamplePuzzle()">Load Sample</button>
+        <button onclick="solveSudoku()">Solve</button>
+        <button onclick="resetGrid()">Reset</button>
+    </div>
+    <div id="error-message"></div>
+
+    <script>
+        // Sample Sudoku puzzle
+        const samplePuzzle = [
+            [5,3,0,0,7,0,0,0,0],
+            [6,0,0,1,9,5,0,0,0],
+            [0,9,8,0,0,0,0,6,0],
+            [8,0,0,0,6,0,0,0,3],
+            [4,0,0,8,0,3,0,0,1],
+            [7,0,0,0,2,0,0,0,6],
+            [0,6,0,0,0,0,2,8,0],
+            [0,0,0,4,1,9,0,0,5],
+            [0,0,0,0,8,0,0,7,9]
+        ];
+
+        // Initialize the grid
+        function initializeGrid() {
+            const grid = document.getElementById('sudoku-grid');
+            grid.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.maxLength = 1;
+                    input.oninput = () => {
+                        if (input.value.match(/^[1-9]$/)) {
+                            cell.classList.add('filled');
+                        } else {
+                            cell.classList.remove('filled');
+                            input.value = '';
+                        }
+                    };
+                    cell.appendChild(input);
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        // Get grid values
+        function getGridValues() {
+            const cells = document.querySelectorAll('.cell input');
+            const grid = [];
+            for (let i = 0; i < 9; i++) {
+                const row = [];
+                for (let j = 0; j < 9; j++) {
+                    const value = cells[i * 9 + j].value;
+                    row.push(value ? parseInt(value) : 0);
+                }
+                grid.push(row);
+            }
+            return grid;
+        }
+
+        // Set grid values
+        function setGridValues(grid) {
+            const cells = document.querySelectorAll('.cell input');
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    cells[i * 9 + j].value = grid[i][j] === 0 ? '' : grid[i][j];
+                    if (grid[i][j] !== 0) {
+                        cells[i * 9 + j].parentElement.classList.add('filled');
+                    } else {
+                        cells[i * 9 + j].parentElement.classList.remove('filled');
+                    }
+                }
+            }
+        }
+
+        // Load sample puzzle
+        function loadSamplePuzzle() {
+            setGridValues(samplePuzzle);
+            document.getElementById('error-message').textContent = '';
+        }
+
+        // Reset grid
+        function resetGrid() {
+            const cells = document.querySelectorAll('.cell input');
+            cells.forEach(cell => {
+                cell.value = '';
+                cell.parentElement.classList.remove('filled');
+            });
+            document.getElementById('error-message').textContent = '';
+        }
+
+        // Check if a number can be placed in the given position
+        function isValid(grid, row, col, num) {
+            for (let x = 0; x < 9; x++) {
+                if (grid[row][x] === num || grid[x][col] === num) return false;
+            }
+            const startRow = row - row % 3, startCol = col - col % 3;
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (grid[i + startRow][j + startCol] === num) return false;
+                }
+            }
+            return true;
+        }
+
+        // Find the cell with the fewest possible values
+        function findBestCell(grid) {
+            let minPossibilities = 10;
+            let bestCell = null;
+            for (let row = 0; row < 9; row++) {
+                for (let col = 0; col < 9; col++) {
+                    if (grid[row][col] === 0) {
+                        let possibilities = 0;
+                        for (let num = 1; num <= 9; num++) {
+                            if (isValid(grid, row, col, num)) possibilities++;
+                        }
+                        if (possibilities < minPossibilities) {
+                            minPossibilities = possibilities;
+                            bestCell = { row, col };
+                        }
+                        if (minPossibilities === 1) return bestCell;
+                    }
+                }
+            }
+            return bestCell;
+        }
+
+        // Solve Sudoku with minimal animation moves
+        async function solveSudokuGrid(grid, moves = []) {
+            const cell = findBestCell(grid);
+            if (!cell) {
+                moves.push({ isComplete: true }); // Mark completion for animation
+                return true;
+            }
+            const { row, col } = cell;
+            for (let num = 1; num <= 9; num++) {
+                if (isValid(grid, row, col, num)) {
+                    grid[row][col] = num;
+                    moves.push({ row, col, value: num });
+                    if (await solveSudokuGrid(grid, moves)) return true;
+                    grid[row][col] = 0;
+                    moves.push({ row, col, value: 0 });
+                }
+            }
+            return false;
+        }
+
+        // Minimal animation for solving
+        async function animateSolving(moves) {
+            const cells = document.querySelectorAll('.cell input');
+            for (const move of moves) {
+                if (move.isComplete) continue; // Skip completion marker
+                const { row, col, value } = move;
+                const index = row * 9 + col;
+                cells[index].value = value === 0 ? '' : value;
+                cells[index].parentElement.classList.add('solving');
+                await new Promise(resolve => setTimeout(resolve, 10)); // Fast animation
+                cells[index].parentElement.classList.remove('solving');
+            }
+        }
+
+        // Solve Sudoku
+        async function solveSudoku() {
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.textContent = '';
+            const grid = getGridValues();
+
+            // Validate grid
+            if (!grid.every(row => row.length === 9 && row.every(val => Number.isInteger(val) && val >= 0 && val <= 9))) {
+                errorMessage.textContent = 'Invalid grid: Please ensure all inputs are numbers between 1 and 9.';
+                return;
+            }
+
+            // Validate initial puzzle for conflicts
+            for (let row = 0; row < 9; row++) {
+                for (let col = 0; col < 9; col++) {
+                    if (grid[row][col] !== 0) {
+                        const num = grid[row][col];
+                        grid[row][col] = 0;
+                        if (!isValid(grid, row, col, num)) {
+                            errorMessage.textContent = `Invalid puzzle: Conflict at row ${row + 1}, column ${col + 1}.`;
+                            grid[row][col] = num;
+                            return;
+                        }
+                        grid[row][col] = num;
+                    }
+                }
+            }
+
+            const gridCopy = grid.map(row => [...row]); // Deep copy
+            const moves = [];
+            if (await solveSudokuGrid(gridCopy, moves)) {
+                await animateSolving(moves);
+                setGridValues(gridCopy);
+                errorMessage.textContent = 'Puzzle solved successfully!';
+            } else {
+                errorMessage.textContent = 'No solution exists for the given Sudoku puzzle.';
+            }
+        }
+
+        // Initialize grid on page load
+        initializeGrid();
+    </script>
+</body>
+</html>
